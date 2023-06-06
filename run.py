@@ -13,8 +13,7 @@ from transformers import (BertConfig, BertForTokenClassification,
 from torch.utils.data import DataLoader
 
 from datasets import load_datasets_and_vocabs
-from model import (Aspect_Text_GAT_ours,
-                    Pure_Bert, Aspect_Bert_GAT, Aspect_Text_GAT_only)
+from model import Aspect_Bert_GAT
 from trainer import train
 
 logger = logging.getLogger(__name__)
@@ -168,14 +167,9 @@ def main():
 
     # Build Model
     # model = Aspect_Text_Multi_Syntax_Encoding(args, dep_tag_vocab['len'], pos_tag_vocab['len'])
-    if args.pure_bert:
-        model = Pure_Bert(args)
-    elif args.gat_bert:
-        model = Aspect_Bert_GAT(args, dep_tag_vocab['len'], pos_tag_vocab['len'])  # R-GAT + Bert
-    elif args.gat_our:
-        model = Aspect_Text_GAT_ours(args, dep_tag_vocab['len'], pos_tag_vocab['len']) # R-GAT with reshaped tree
-    else:
-        model = Aspect_Text_GAT_only(args, dep_tag_vocab['len'], pos_tag_vocab['len'])  # original GAT with reshaped tree
+
+
+    model = Aspect_Bert_GAT(args, dep_tag_vocab['len'], pos_tag_vocab['len'])  # R-GAT + Bert
 
     model.to(args.device)
     # Train
