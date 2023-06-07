@@ -2,7 +2,7 @@
 import argparse
 import logging
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 import random
 
 import numpy as np
@@ -24,111 +24,6 @@ def set_seed(args):
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-
-    # Required parameters
-    parser.add_argument('--dataset_name', type=str, default='rest',
-                        choices=['rest', 'laptop', 'twitter'],
-                        help='Choose absa dataset.')
-    parser.add_argument('--output_dir', type=str, default='/data/output-gcn',
-                        help='Directory to store intermedia data, such as vocab, embeddings, tags_vocab.')
-    parser.add_argument('--num_classes', type=int, default=3,
-                        help='Number of classes of ABSA.')
-
-
-    parser.add_argument('--cuda_id', type=str, default='3',
-                        help='Choose which GPUs to run')
-    parser.add_argument('--seed', type=int, default=2019,
-                        help='random seed for initialization')
-
-    # Model parameters
-    parser.add_argument('--glove_dir', type=str, default='/data1/SHENWZH/wordvec',
-                        help='Directory storing glove embeddings')
-    parser.add_argument('--bert_model_dir', type=str, default='bert-base-uncased',
-                        help='Path to pre-trained Bert model.')
-    parser.add_argument('--pure_bert', action='store_true',
-                        help='Cat text and aspect, [cls] to predict.')
-    parser.add_argument('--gat_bert', action='store_true',
-                        help='Cat text and aspect, [cls] to predict.')
-
-    parser.add_argument('--highway', action='store_true',
-                        help='Use highway embed.')
-
-    parser.add_argument('--num_layers', type=int, default=2,
-                        help='Number of layers of bilstm or highway or elmo.')
-
-
-    parser.add_argument('--add_non_connect',  type= bool, default=True,
-                        help='Add a sepcial "non-connect" relation for aspect with no direct connection.')
-    parser.add_argument('--multi_hop',  type= bool, default=True,
-                        help='Multi hop non connection.')
-    parser.add_argument('--max_hop', type = int, default=4,
-                        help='max number of hops')
-
-
-    parser.add_argument('--num_heads', type=int, default=6,
-                        help='Number of heads for gat.')
-    
-    parser.add_argument('--dropout', type=float, default=0,
-                        help='Dropout rate for embedding.')
-
-
-    parser.add_argument('--num_gcn_layers', type=int, default=1,
-                        help='Number of GCN layers.')
-    parser.add_argument('--gcn_mem_dim', type=int, default=300,
-                        help='Dimension of the W in GCN.')
-    parser.add_argument('--gcn_dropout', type=float, default=0.2,
-                        help='Dropout rate for GCN.')
-    # GAT
-    parser.add_argument('--gat', action='store_true',
-                        help='GAT')
-    parser.add_argument('--gat_our', action='store_true',
-                        help='GAT_our')
-    parser.add_argument('--gat_attention_type', type = str, choices=['linear','dotprod','gcn'], default='dotprod',
-                        help='The attention used for gat')
-
-    parser.add_argument('--embedding_type', type=str,default='glove', choices=['glove','bert'])
-    parser.add_argument('--embedding_dim', type=int, default=300,
-                        help='Dimension of glove embeddings')
-    parser.add_argument('--dep_relation_embed_dim', type=int, default=300,
-                        help='Dimension for dependency relation embeddings.')
-
-    parser.add_argument('--hidden_size', type=int, default=300,
-                        help='Hidden size of bilstm, in early stage.')
-    parser.add_argument('--final_hidden_size', type=int, default=300,
-                        help='Hidden size of bilstm, in early stage.')
-    parser.add_argument('--num_mlps', type=int, default=2,
-                        help='Number of mlps in the last of model.')
-
-    # Training parameters
-    parser.add_argument("--per_gpu_train_batch_size", default=16, type=int,
-                        help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--per_gpu_eval_batch_size", default=32, type=int,
-                        help="Batch size per GPU/CPU for evaluation.")
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=2,
-                        help="Number of updates steps to accumulate before performing a backward/update pass.")
-    parser.add_argument("--learning_rate", default=1e-3, type=float,
-                        help="The initial learning rate for Adam.")
-    
-    parser.add_argument("--weight_decay", default=0.0, type=float,
-                        help="Weight deay if we apply some.")
-    parser.add_argument("--adam_epsilon", default=1e-8, type=float,
-                        help="Epsilon for Adam optimizer.")
-
-    parser.add_argument("--max_grad_norm", default=1.0, type=float,
-                        help="Max gradient norm.")
-    parser.add_argument("--num_train_epochs", default=30.0, type=float,
-                        help="Total number of training epochs to perform.")
-    parser.add_argument("--max_steps", default=-1, type=int,
-                        help="If > 0: set total number of training steps(that update the weights) to perform. Override num_train_epochs.")
-    parser.add_argument('--logging_steps', type=int, default=50,
-                        help="Log every X updates steps.")
-    
-    return parser.parse_args()
-
-
 def check_args(args):
     '''
     eliminate confilct situations
@@ -138,49 +33,94 @@ def check_args(args):
         
 
 
-def main():
-    # Setup logging
-    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                        datefmt='%m/%d/%Y %H:%M:%S',
-                        level=logging.INFO)
-    
-    # Parse args
-    args = parse_args()
-    check_args(args)
-
-    # Setup CUDA, GPU training
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_id
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    args.device = device
-    logger.info('Device is %s', args.device)
-
-    # Set seed
-    set_seed(args)
-
-    # Bert, load pretrained model and tokenizer, check if neccesary to put bert here
-    if args.embedding_type == 'bert':
-        tokenizer = BertTokenizer.from_pretrained(args.bert_model_dir)
-        args.tokenizer = tokenizer
-
-    # Load datasets and vocabs
-    train_dataset, test_dataset, word_vocab, dep_tag_vocab, pos_tag_vocab= load_datasets_and_vocabs(args)
-
-    # Build Model
-    # model = Aspect_Text_Multi_Syntax_Encoding(args, dep_tag_vocab['len'], pos_tag_vocab['len'])
+class ArgumentParser:
+    def __init__(self):
+        pass
 
 
-    model = Aspect_Bert_GAT(args, dep_tag_vocab['len'], pos_tag_vocab['len'])  # R-GAT + Bert
+args = ArgumentParser()
 
-    model.to(args.device)
-    # Train
-    _, _,  all_eval_results = train(args, train_dataset, model, test_dataset)
+# Required parameters
+args.dataset_name = 'rest'
+args.output_dir = '/data/output-gcn'
+args.num_classes = 3
+args.cuda_id = '3'
+args.seed = 2019
 
-    if len(all_eval_results):
-        best_eval_result = max(all_eval_results, key=lambda x: x['acc']) 
-        for key in sorted(best_eval_result.keys()):
-            logger.info("  %s = %s", key, str(best_eval_result[key]))
+# Model parameters
+args.glove_dir = '/data1/SHENWZH/wordvec'
+args.bert_model_dir = 'bert-base-uncased'
+args.pure_bert = False
+args.gat_bert = False
+args.highway = False
+args.num_layers = 2
+args.add_non_connect = True
+args.multi_hop = True
+args.max_hop = 4
+args.num_heads = 6
+args.dropout = 0.3
+args.num_gcn_layers = 1
+args.gcn_mem_dim = 300
+args.gcn_dropout = 0.2
+args.gat = False
+args.gat_our = False
+args.gat_attention_type = 'dotprod'
+args.embedding_type = 'bert'
+args.embedding_dim = 300
+args.dep_relation_embed_dim = 300
+args.hidden_size = 200
+args.final_hidden_size = 300
+args.num_mlps = 2
+
+# Training parameters
+args.per_gpu_train_batch_size = 16
+args.per_gpu_eval_batch_size = 32
+args.gradient_accumulation_steps = 2
+args.learning_rate = 5e-5
+args.weight_decay = 0.0
+args.adam_epsilon = 1e-8
+args.max_grad_norm = 1.0
+args.num_train_epochs = 30.0
+args.max_steps = -1
+args.logging_steps = 50
 
 
-if __name__ == "__main__":
-    main()
+# Setup logging
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                    datefmt='%m/%d/%Y %H:%M:%S',
+                    level=logging.INFO)
+
+# Parse args
+check_args(args)
+
+# Setup CUDA, GPU training
+#os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_id
+#device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
+args.device = device
+logger.info('Device is %s', args.device)
+
+# Set seed
+set_seed(args)
+
+# Bert, load pretrained model and tokenizer, check if neccesary to put bert here
+#if args.embedding_type == 'bert':
+tokenizer = BertTokenizer.from_pretrained(args.bert_model_dir)
+args.tokenizer = tokenizer
+
+# Load datasets and vocabs
+train_dataset, test_dataset, word_vocab, dep_tag_vocab, pos_tag_vocab= load_datasets_and_vocabs(args)
+
+# Build Model
+
+model = Aspect_Bert_GAT(args, dep_tag_vocab['len'], pos_tag_vocab['len'])  # R-GAT + Bert
+
+model.to(args.device)
+# Train
+_, _,  all_eval_results = train(args, train_dataset, model, test_dataset)
+
+if len(all_eval_results):
+    best_eval_result = max(all_eval_results, key=lambda x: x['acc']) 
+    for key in sorted(best_eval_result.keys()):
+        logger.info("  %s = %s", key, str(best_eval_result[key]))
 
