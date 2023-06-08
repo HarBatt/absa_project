@@ -10,7 +10,7 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm, trange
 
-from datasets import my_collate, my_collate_elmo, my_collate_pure_bert, my_collate_bert
+from datasets import my_collate_bert
 from transformers import AdamW
 from transformers import BertTokenizer
 

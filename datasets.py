@@ -38,9 +38,6 @@ def load_datasets_and_vocabs(args):
     # Build word vocabulary(part of speech, dep_tag) and save pickles.
     word_vecs, word_vocab, dep_tag_vocab, pos_tag_vocab = load_and_cache_vocabs(
         train_all_unrolled+test_all_unrolled, args)
-    if args.embedding_type == 'glove':
-        embedding = torch.from_numpy(np.asarray(word_vecs, dtype=np.float32))
-        args.glove_embedding = embedding
 
     train_dataset = ASBA_Depparsed_Dataset(
         train_all_unrolled, args, word_vocab, dep_tag_vocab, pos_tag_vocab)
@@ -406,38 +403,8 @@ def load_and_cache_vocabs(data, args):
 
     # Build or load word vocab and glove embeddings.
     # Elmo and bert have it's own vocab and embeddings.
-    if args.embedding_type == 'glove':
-        cached_word_vocab_file = os.path.join(
-            pkls_path, 'cached_{}_{}_word_vocab.pkl'.format(args.dataset_name, args.embedding_type))
-        if os.path.exists(cached_word_vocab_file):
-            logger.info('Loading word vocab from %s', cached_word_vocab_file)
-            with open(cached_word_vocab_file, 'rb') as f:
-                word_vocab = pickle.load(f)
-        else:
-            logger.info('Creating word vocab from dataset %s',
-                        args.dataset_name)
-            word_vocab = build_text_vocab(data)
-            logger.info('Word vocab size: %s', word_vocab['len'])
-            logging.info('Saving word vocab to %s', cached_word_vocab_file)
-            with open(cached_word_vocab_file, 'wb') as f:
-                pickle.dump(word_vocab, f, -1)
-
-        cached_word_vecs_file = os.path.join(pkls_path, 'cached_{}_{}_word_vecs.pkl'.format(
-            args.dataset_name, args.embedding_type))
-        if os.path.exists(cached_word_vecs_file):
-            logger.info('Loading word vecs from %s', cached_word_vecs_file)
-            with open(cached_word_vecs_file, 'rb') as f:
-                word_vecs = pickle.load(f)
-        else:
-            logger.info('Creating word vecs from %s', args.glove_dir)
-            word_vecs = load_glove_embedding(
-                word_vocab['itos'], args.glove_dir, 0.25, args.embedding_dim)
-            logger.info('Saving word vecs to %s', cached_word_vecs_file)
-            with open(cached_word_vecs_file, 'wb') as f:
-                pickle.dump(word_vecs, f, -1)
-    else:
-        word_vocab = None
-        word_vecs = None
+    word_vocab = None
+    word_vecs = None
 
     # Build vocab of dependency tags
     cached_dep_tag_vocab_file = os.path.join(
@@ -472,28 +439,6 @@ def load_and_cache_vocabs(data, args):
             pickle.dump(pos_tag_vocab, f, -1)
 
     return word_vecs, word_vocab, dep_tag_vocab, pos_tag_vocab
-
-
-def load_glove_embedding(word_list, glove_dir, uniform_scale, dimension_size):
-    glove_words = []
-    with open(os.path.join(glove_dir, 'glove.840B.300d.txt'), 'r') as fopen:
-        for line in fopen:
-            glove_words.append(line.strip().split(' ')[0])
-    word2offset = {w: i for i, w in enumerate(glove_words)}
-    word_vectors = []
-    for word in word_list:
-        if word in word2offset:
-            line = linecache.getline(os.path.join(
-                glove_dir, 'glove.840B.300d.txt'), word2offset[word]+1)
-            assert(word == line[:line.find(' ')].strip())
-            word_vectors.append(np.fromstring(
-                line[line.find(' '):].strip(), sep=' ', dtype=np.float32))
-        elif word == '<pad>':
-            word_vectors.append(np.zeros(dimension_size, dtype=np.float32))
-        else:
-            word_vectors.append(
-                np.random.uniform(-uniform_scale, uniform_scale, dimension_size))
-    return word_vectors
 
 
 def _default_unk_index():
@@ -670,23 +615,10 @@ class ASBA_Depparsed_Dataset(Dataset):
         items = e['dep_tag_ids'], \
             e['pos_class'], e['text_len'], e['aspect_len'], e['sentiment'],\
             e['dep_rel_ids'], e['predicted_heads'], e['aspect_position'], e['dep_dir_ids']
-        if self.args.embedding_type == 'glove':
-            non_bert_items = e['sentence_ids'], e['aspect_ids']
-            items_tensor = non_bert_items + items
-            items_tensor = tuple(torch.tensor(t) for t in items_tensor)
-        elif self.args.embedding_type == 'elmo':
-            items_tensor = e['sentence_ids'], e['aspect_ids']
-            items_tensor += tuple(torch.tensor(t) for t in items)
-        else:  # bert
-            if self.args.pure_bert:
-                bert_items = e['input_cat_ids'], e['segment_ids']
-                items_tensor = tuple(torch.tensor(t) for t in bert_items)
-                items_tensor += tuple(torch.tensor(t) for t in items)
-            else:
-                bert_items = e['input_ids'], e['word_indexer'], e['input_aspect_ids'], e['aspect_indexer'], e['input_cat_ids'], e['segment_ids']
-                # segment_id
-                items_tensor = tuple(torch.tensor(t) for t in bert_items)
-                items_tensor += tuple(torch.tensor(t) for t in items)
+        bert_items = e['input_ids'], e['word_indexer'], e['input_aspect_ids'], e['aspect_indexer'], e['input_cat_ids'], e['segment_ids']
+        # segment_id
+        items_tensor = tuple(torch.tensor(t) for t in bert_items)
+        items_tensor += tuple(torch.tensor(t) for t in items)
         return items_tensor
 
     def convert_features_bert(self, i):
@@ -741,22 +673,15 @@ class ASBA_Depparsed_Dataset(Dataset):
 
         # THE STEP:Zero-pad up to the sequence length, save to collate_fn.
 
-        if self.args.pure_bert:
-            input_cat_ids = input_ids + input_aspect_ids[1:]
-            segment_ids = [0] * len(input_ids) + [1] * len(input_aspect_ids[1:])
+        input_cat_ids = input_ids + input_aspect_ids[1:]
+        segment_ids = [0] * len(input_ids) + [1] * len(input_aspect_ids[1:])
 
-            self.data[i]['input_cat_ids'] = input_cat_ids
-            self.data[i]['segment_ids'] = segment_ids
-        else:
-            input_cat_ids = input_ids + input_aspect_ids[1:]
-            segment_ids = [0] * len(input_ids) + [1] * len(input_aspect_ids[1:])
-
-            self.data[i]['input_cat_ids'] = input_cat_ids
-            self.data[i]['segment_ids'] = segment_ids
-            self.data[i]['input_ids'] = input_ids
-            self.data[i]['word_indexer'] = word_indexer
-            self.data[i]['input_aspect_ids'] = input_aspect_ids
-            self.data[i]['aspect_indexer'] = aspect_indexer
+        self.data[i]['input_cat_ids'] = input_cat_ids
+        self.data[i]['segment_ids'] = segment_ids
+        self.data[i]['input_ids'] = input_ids
+        self.data[i]['word_indexer'] = word_indexer
+        self.data[i]['input_aspect_ids'] = input_aspect_ids
+        self.data[i]['aspect_indexer'] = aspect_indexer
 
     def convert_features(self):
         '''
@@ -795,144 +720,6 @@ class ASBA_Depparsed_Dataset(Dataset):
             self.data[i]['dep_rel_ids'] = [self.dep_tag_vocab['stoi'][r]
                                            for r in self.data[i]['predicted_dependencies']]
 
-
-def my_collate(batch):
-    '''
-    Pad sentence and aspect in a batch.
-    Sort the sentences based on length.
-    Turn all into tensors.
-    '''
-    sentence_ids, aspect_ids, dep_tag_ids, pos_class, text_len, aspect_len, sentiment, dep_rel_ids, dep_heads, aspect_positions, dep_dir_ids = zip(
-        *batch)  # from Dataset.__getitem__()
-    text_len = torch.tensor(text_len)
-    aspect_len = torch.tensor(aspect_len)
-    sentiment = torch.tensor(sentiment)
-
-    # Pad sequences.
-    sentence_ids = pad_sequence(
-        sentence_ids, batch_first=True, padding_value=0)
-    aspect_ids = pad_sequence(aspect_ids, batch_first=True, padding_value=0)
-    aspect_positions = pad_sequence(
-        aspect_positions, batch_first=True, padding_value=0)
-
-    dep_tag_ids = pad_sequence(dep_tag_ids, batch_first=True, padding_value=0)
-    dep_dir_ids = pad_sequence(dep_dir_ids, batch_first=True, padding_value=0)
-    pos_class = pad_sequence(pos_class, batch_first=True, padding_value=0)
-
-    dep_rel_ids = pad_sequence(dep_rel_ids, batch_first=True, padding_value=0)
-    dep_heads = pad_sequence(dep_heads, batch_first=True, padding_value=0)
-
-    # Sort all tensors based on text len.
-    _, sorted_idx = text_len.sort(descending=True)
-    sentence_ids = sentence_ids[sorted_idx]
-    aspect_ids = aspect_ids[sorted_idx]
-    aspect_positions = aspect_positions[sorted_idx]
-    dep_tag_ids = dep_tag_ids[sorted_idx]
-    dep_dir_ids = dep_dir_ids[sorted_idx]
-    pos_class = pos_class[sorted_idx]
-    text_len = text_len[sorted_idx]
-    aspect_len = aspect_len[sorted_idx]
-    sentiment = sentiment[sorted_idx]
-    dep_rel_ids = dep_rel_ids[sorted_idx]
-    dep_heads = dep_heads[sorted_idx]
-
-    return sentence_ids, aspect_ids, dep_tag_ids, pos_class, text_len, aspect_len, sentiment, dep_rel_ids, dep_heads, aspect_positions, dep_dir_ids
-
-
-def my_collate_elmo(batch):
-    '''
-    Pad sentence and aspect in a batch.
-    Sort the sentences based on length.
-    Turn all into tensors.
-    The difference with my_collate is just padding method with sentence_ids and aspect_ids.
-    '''
-    sentence_ids, aspect_ids, dep_tag_ids, pos_class, text_len, aspect_len, sentiment, dep_rel_ids, dep_heads, aspect_positions, dep_dir_ids = zip(
-        *batch)
-    text_len = torch.tensor(text_len)
-    aspect_len = torch.tensor(aspect_len)
-    sentiment = torch.tensor(sentiment)
-
-    # Pad sequences.
-    sentence_ids = batch_to_ids(sentence_ids)
-    aspect_ids = batch_to_ids(aspect_ids)
-
-    aspect_positions = pad_sequence(
-        aspect_positions, batch_first=True, padding_value=0)
-
-    dep_tag_ids = pad_sequence(dep_tag_ids, batch_first=True, padding_value=0)
-    dep_dir_ids = pad_sequence(dep_dir_ids, batch_first=True, padding_value=0)
-    pos_class = pad_sequence(pos_class, batch_first=True, padding_value=0)
-
-    dep_rel_ids = pad_sequence(dep_rel_ids, batch_first=True, padding_value=0)
-    dep_heads = pad_sequence(dep_heads, batch_first=True, padding_value=0)
-
-    # Sort all tensors based on text len.
-    _, sorted_idx = text_len.sort(descending=True)
-    sentence_ids = sentence_ids[sorted_idx]
-    aspect_ids = aspect_ids[sorted_idx]
-    aspect_positions = aspect_positions[sorted_idx]
-    dep_tag_ids = dep_tag_ids[sorted_idx]
-    dep_dir_ids = dep_dir_ids[sorted_idx]
-    pos_class = pos_class[sorted_idx]
-    text_len = text_len[sorted_idx]
-    aspect_len = aspect_len[sorted_idx]
-    sentiment = sentiment[sorted_idx]
-    dep_rel_ids = dep_rel_ids[sorted_idx]
-    dep_heads = dep_heads[sorted_idx]
-
-    return sentence_ids, aspect_ids, dep_tag_ids, pos_class, text_len, aspect_len, sentiment, dep_rel_ids, dep_heads, aspect_positions, dep_dir_ids
-
-
-# 11/7
-def my_collate_pure_bert(batch):
-    '''
-    Pad sentence and aspect in a batch.
-    Sort the sentences based on length.
-    Turn all into tensors.
-
-    Process bert feature
-    Pure Bert: cat text and aspect, cls to predict.
-    Test indexing while at it?
-    '''
-    # sentence_ids, aspect_ids
-    input_cat_ids, segment_ids, dep_tag_ids, pos_class, text_len, aspect_len, sentiment, dep_rel_ids, dep_heads, aspect_positions, dep_dir_ids = zip(
-        *batch)  # from Dataset.__getitem__()
-
-    text_len = torch.tensor(text_len)
-    aspect_len = torch.tensor(aspect_len)
-    sentiment = torch.tensor(sentiment)
-
-    # Pad sequences.
-    input_cat_ids = pad_sequence(
-        input_cat_ids, batch_first=True, padding_value=0)
-    segment_ids = pad_sequence(segment_ids, batch_first=True, padding_value=0)
-
-    aspect_positions = pad_sequence(
-        aspect_positions, batch_first=True, padding_value=0)
-
-    dep_tag_ids = pad_sequence(dep_tag_ids, batch_first=True, padding_value=0)
-    dep_dir_ids = pad_sequence(dep_dir_ids, batch_first=True, padding_value=0)
-    pos_class = pad_sequence(pos_class, batch_first=True, padding_value=0)
-
-    dep_rel_ids = pad_sequence(dep_rel_ids, batch_first=True, padding_value=0)
-    dep_heads = pad_sequence(dep_heads, batch_first=True, padding_value=0)
-
-    # Sort all tensors based on text len.
-    _, sorted_idx = text_len.sort(descending=True)
-    input_cat_ids = input_cat_ids[sorted_idx]
-    segment_ids = segment_ids[sorted_idx]
-    aspect_positions = aspect_positions[sorted_idx]
-    dep_tag_ids = dep_tag_ids[sorted_idx]
-
-    dep_dir_ids = dep_dir_ids[sorted_idx]
-    pos_class = pos_class[sorted_idx]
-    text_len = text_len[sorted_idx]
-    aspect_len = aspect_len[sorted_idx]
-    sentiment = sentiment[sorted_idx]
-    dep_rel_ids = dep_rel_ids[sorted_idx]
-    dep_heads = dep_heads[sorted_idx]
-
-    return input_cat_ids, segment_ids, dep_tag_ids, pos_class, text_len, aspect_len, sentiment, dep_rel_ids, dep_heads, aspect_positions, dep_dir_ids
 
 
 def my_collate_bert(batch):
