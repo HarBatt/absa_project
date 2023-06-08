@@ -8,8 +8,7 @@ from transformers import BertModel, BertConfig, BertPreTrainedModel, BertTokeniz
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from model_gcn import GAT, GCN, Rel_GAT
-from model_utils import LinearAttention, DotprodAttention, RelationAttention, Highway, mask_logits
+from model_utils import RelationAttention, Highway
 from tree import *
 
 

@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 from datasets import load_datasets_and_vocabs
 from model import Aspect_Bert_GAT
-from trainer import train
+from trainer import train_model
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +117,7 @@ model = Aspect_Bert_GAT(args, dep_tag_vocab['len'], pos_tag_vocab['len'])  # R-G
 
 model.to(args.device)
 # Train
-_, _,  all_eval_results = train(args, train_dataset, model, test_dataset)
+_, _,  all_eval_results = train_model(args, train_dataset, model, test_dataset)
 
 if len(all_eval_results):
     best_eval_result = max(all_eval_results, key=lambda x: x['acc']) 
