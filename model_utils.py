@@ -113,43 +113,5 @@ class Highway(nn.Module):
         return x
 
 
-class DepparseMultiHeadAttention(nn.Module):
-    def __init__(self, h=6, Co=300, cat=True):
-        super().__init__()
-        self.hidden_size = Co // h
-        self.h = h
-        self.fc1 = nn.Linear(Co, Co)
-        self.relu = nn.ReLU()
-        self.fc2s = nn.ModuleList(
-            [nn.Linear(self.hidden_size, 1) for _ in range(h)])
-        self.cat = cat
-
-    def forward(self, feature, dep_tags_v, dmask):
-        '''
-        C feature/context [N, L, D]
-        Q dep_tags_v          [N, L, D]
-        mask dmask          [N, L]
-        '''
-        nbatches = dep_tags_v.size(0)
-        Q = self.fc1(dep_tags_v).view(nbatches, -1, self.h,
-                                      self.hidden_size)  # [N, L, #heads, hidden_size]
-        Q = self.relu(Q)
-        Q = Q.transpose(0, 2)  # [#heads, L, N, hidden_size]
-        Q = [l(q).squeeze(2).transpose(0, 1)
-             for l, q in zip(self.fc2s, Q)]  # [N, L] * #heads
-        # Q = Q.squeeze(2)
-        Q = [F.softmax(mask_logits(q, dmask), dim=1).unsqueeze(2)
-             for q in Q]  # [N, L, 1] * #heads
-
-        # Q = Q.unsqueeze(2)
-        if self.cat:
-            out = torch.cat(
-                [torch.bmm(feature.transpose(1, 2), q).squeeze(2) for q in Q], dim=1)
-        else:
-            out = torch.stack(
-                [torch.bmm(feature.transpose(1, 2), q).squeeze(2) for q in Q], dim=2)
-            out = torch.sum(out, dim=2)
-        # out = out.squeeze(2)
-        return out, Q[0]  # ([N, L]) one head
 
 
