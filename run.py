@@ -13,7 +13,7 @@ from transformers import (BertConfig, BertForTokenClassification,
 from torch.utils.data import DataLoader
 
 from datasets import load_datasets_and_vocabs
-from model import Aspect_Bert_GAT
+from model import BertGraphAttentionNetwork
 from trainer import train_model
 
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ check_args(args)
 # Setup CUDA, GPU training
 #os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_id
 #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-device = torch.device('cpu')
+device = "cpu"
 args.device = device
 logger.info('Device is %s', args.device)
 
@@ -113,7 +113,7 @@ train_dataset, test_dataset, word_vocab, dep_tag_vocab, pos_tag_vocab= load_data
 
 # Build Model
 
-model = Aspect_Bert_GAT(args, dep_tag_vocab['len'], pos_tag_vocab['len'])  # R-GAT + Bert
+model = BertGraphAttentionNetwork(args, dep_tag_vocab['len'], pos_tag_vocab['len'])  # R-GAT + Bert
 
 model.to(args.device)
 # Train
