@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import pickle
 import torch
@@ -13,7 +12,6 @@ from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 
 nltk.download('punkt')
-logger = logging.getLogger(__name__)
 
 
 def load_datasets_and_vocabs(args):
@@ -210,7 +208,7 @@ def get_rolled_and_unrolled_data(input_data, args):
     mixed_counter = defaultdict(int)
     sentiments_lookup = {'negative': 0, 'positive': 1, 'neutral': 2}
 
-    logger.info('*** Start processing data(unrolling and reshaping) ***')
+    print('*** Start processing data(unrolling and reshaping) ***')
 
     # for seeking 'but' examples
     for e in input_data:
