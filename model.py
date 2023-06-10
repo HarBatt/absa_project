@@ -1,12 +1,8 @@
-import math
-
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import BertModel, BertConfig, BertPreTrainedModel, BertTokenizer
+from transformers import BertModel, BertConfig
 from torch.autograd import Variable
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from tree import *
 
 def apply_masked_logits(target, mask):

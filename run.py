@@ -1,11 +1,8 @@
 # coding=utf-8
-import logging
 import random
-
 import numpy as np
 import torch
 from transformers import BertTokenizer
-
 from datasets import load_datasets_and_vocabs
 from model import BertGraphAttentionNetwork
 from trainer import train_model

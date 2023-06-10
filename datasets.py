@@ -1,25 +1,17 @@
-from torch.nn.utils.rnn import pad_sequence
-import argparse
-import codecs
 import json
-import linecache
 import logging
 import os
 import pickle
-import random
-import sys
-from collections import Counter, defaultdict
-from copy import copy, deepcopy
-
-import nltk
-import numpy as np
-import simplejson as json
 import torch
-from allennlp.modules.elmo import batch_to_ids
-from lxml import etree
+import nltk
+import simplejson as json
+
 from nltk import word_tokenize
-from nltk.tokenize import TreebankWordTokenizer
-from torch.utils.data import DataLoader, Dataset
+from copy import deepcopy
+from collections import Counter, defaultdict
+from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
+
 nltk.download('punkt')
 logger = logging.getLogger(__name__)
 
@@ -31,9 +23,9 @@ def load_datasets_and_vocabs(args):
     _, train_all_unrolled, _, _ = get_rolled_and_unrolled_data(train, args)
     _, test_all_unrolled, _, _ = get_rolled_and_unrolled_data(test, args)
 
-    logger.info('****** After unrolling ******')
-    logger.info('Train set size: %s', len(train_all_unrolled))
-    logger.info('Test set size: %s,', len(test_all_unrolled))
+    print('****** After unrolling ******')
+    print('Train set size: {}'.format(len(train_all_unrolled)))
+    print('Test set size: {}'.format(len(test_all_unrolled)))
 
     # Build word vocabulary(part of speech, dep_tag) and save pickles.
     word_vecs, word_vocab, dep_tag_vocab, pos_tag_vocab = load_and_cache_vocabs(
@@ -82,14 +74,14 @@ def get_dataset(dataset_name):
                'laptop': laptop_test, 'twitter': twitter_test}
 
     train = list(read_sentence_depparsed(ds_train[dataset_name]))
-    logger.info('# Read %s Train set: %d', dataset_name, len(train))
+    print('#Read {} Train set: {}'.format(dataset_name, len(train)))
 
     test = list(read_sentence_depparsed(ds_test[dataset_name]))
-    logger.info("# Read %s Test set: %d", dataset_name, len(test))
+    print("#Read {} Test set: {}".format(dataset_name, len(test)))
     return train, test
 
 
-def reshape_dependency_tree_new(as_start, as_end, dependencies, multi_hop=False, add_non_connect=False, tokens=None, max_hop = 5):
+def reshape_dependency_tree(as_start, as_end, dependencies, multi_hop=False, add_non_connect=False, tokens=None, max_hop = 5):
     '''
     Adding multi hops
     This function is at the core of our algo, it reshape the dependency tree and center on the aspect.
@@ -181,84 +173,6 @@ def reshape_dependency_tree_new(as_start, as_end, dependencies, multi_hop=False,
     return dep_tag, dep_idx, dep_dir
 
 
-def reshape_dependency_tree(as_start, as_end, dependencies, add_2hop=False, add_non_connect=False, tokens=None):
-    '''
-    This function is at the core of our algo, it reshape the dependency tree and center on the aspect.
-
-    In open-sourced edition, I choose not to take energy(the soft prediction of dependency from parser)
-    into consideration. For it requires tweaking allennlp's source code, and the energy is space-consuming.
-    And there are no significant difference in performance between the soft and the hard(with non-connect) version.
-
-    '''
-    dep_tag = []
-    dep_idx = []
-    dep_dir = []
-    # 1 hop
-
-    for i in range(as_start, as_end):
-        for dep in dependencies:
-            if i == dep[1] - 1:
-                # not root, not aspect
-                if (dep[2] - 1 < as_start or dep[2] - 1 >= as_end) and dep[2] != 0 and dep[2] - 1 not in dep_idx:
-                    if str(dep[0]) != 'punct':  # and tokens[dep[2] - 1] not in stopWords
-                        dep_tag.append(dep[0])
-                        dep_dir.append(1)
-                    else:
-                        dep_tag.append('<pad>')
-                        dep_dir.append(0)
-                    dep_idx.append(dep[2] - 1)
-            elif i == dep[2] - 1:
-                # not root, not aspect
-                if (dep[1] - 1 < as_start or dep[1] - 1 >= as_end) and dep[1] != 0 and dep[1] - 1 not in dep_idx:
-                    if str(dep[0]) != 'punct':  # and tokens[dep[1] - 1] not in stopWords
-                        dep_tag.append(dep[0])
-                        dep_dir.append(2)
-                    else:
-                        dep_tag.append('<pad>')
-                        dep_dir.append(0)
-                    dep_idx.append(dep[1] - 1)
-
-    # 2 hop
-    if add_2hop:
-        dep_idx_cp = dep_idx
-        for i in dep_idx_cp:
-            for dep in dependencies:
-                # connect to i, not a punct
-                if i == dep[1] - 1 and str(dep[0]) != 'punct':
-                    # not root, not aspect
-                    if (dep[2] - 1 < as_start or dep[2] - 1 >= as_end) and dep[2] != 0:
-                        if dep[2]-1 not in dep_idx:
-                            dep_tag.append(dep[0])
-                            dep_idx.append(dep[2] - 1)
-                # connect to i, not a punct
-                elif i == dep[2] - 1 and str(dep[0]) != 'punct':
-                    # not root, not aspect
-                    if (dep[1] - 1 < as_start or dep[1] - 1 >= as_end) and dep[1] != 0:
-                        if dep[1]-1 not in dep_idx:
-                            dep_tag.append(dep[0])
-                            dep_idx.append(dep[1] - 1)
-    if add_non_connect:
-        for idx, token in enumerate(tokens):
-            if idx not in dep_idx and (idx < as_start or idx >= as_end):
-                dep_tag.append('non-connect')
-                dep_dir.append(0)
-                dep_idx.append(idx)
-
-    # add aspect and index, to make sure length matches len(tokens)
-    for idx, token in enumerate(tokens):
-        if idx not in dep_idx:
-            dep_tag.append('<pad>')
-            dep_dir.append(0)
-            dep_idx.append(idx)
-
-    index = [i[0] for i in sorted(enumerate(dep_idx), key=lambda x:x[1])]
-    dep_tag = [dep_tag[i] for i in index]
-    dep_idx = [dep_idx[i] for i in index]
-    dep_dir = [dep_dir[i] for i in index]
-
-    assert len(tokens) == len(dep_idx), 'length wrong'
-    return dep_tag, dep_idx, dep_dir
-
 def get_rolled_and_unrolled_data(input_data, args):
     '''
     In input_data, each sentence could have multiple aspects with different sentiments.
@@ -288,11 +202,6 @@ def get_rolled_and_unrolled_data(input_data, args):
     mixed_rolled = []
     mixed_unrolled = []
 
-    unrolled = []
-    mixed = []
-    unrolled_ours = []
-    mixed_ours = []
-
     # Make sure the tree is successfully built.
     zero_dep_counter = 0
 
@@ -302,7 +211,7 @@ def get_rolled_and_unrolled_data(input_data, args):
     sentiments_lookup = {'negative': 0, 'positive': 1, 'neutral': 2}
 
     logger.info('*** Start processing data(unrolling and reshaping) ***')
-    tree_samples = []
+
     # for seeking 'but' examples
     for e in input_data:
         e['tokens'] = [x.lower() for x in e['tokens']]
@@ -333,7 +242,7 @@ def get_rolled_and_unrolled_data(input_data, args):
             tos.append(to)
 
             # Center on the aspect.
-            dep_tag, dep_idx, dep_dir = reshape_dependency_tree_new(frm, to, e['dependencies'],
+            dep_tag, dep_idx, dep_dir = reshape_dependency_tree(frm, to, e['dependencies'],
                                                        multi_hop=args.multi_hop, add_non_connect=args.add_non_connect, tokens=e['tokens'], max_hop=args.max_hop)
 
             # Because of tokenizer differences, aspect opsitions are off, so we find the index and try again.
@@ -345,7 +254,7 @@ def get_rolled_and_unrolled_data(input_data, args):
                 as_end = e['tokens'].index(
                     as_sent[-1]) if len(as_sent) > 1 else as_start + 1
                 print("Debugging: as_start as_end ", as_start, as_end)
-                dep_tag, dep_idx, dep_dir = reshape_dependency_tree_new(as_start, as_end, e['dependencies'],
+                dep_tag, dep_idx, dep_dir = reshape_dependency_tree(as_start, as_end, e['dependencies'],
                                                            multi_hop=args.multi_hop, add_non_connect=args.add_non_connect, tokens=e['tokens'], max_hop=args.max_hop)
                 if len(dep_tag) == 0:  # for debugging
                     print("Debugging: zero_dep",
@@ -386,8 +295,8 @@ def get_rolled_and_unrolled_data(input_data, args):
                      'from': froms[i], 'to': tos[i], 'dep_tag': dep_tags[i], 'dep_idx': dep_index[i], 'dependencies': e['dependencies']})
 
 
-    logger.info('Total sentiment counter: %s', total_counter)
-    logger.info('Multi-Aspect-Multi-Sentiment counter: %s', mixed_counter)
+    print('Total sentiment counter: {}'.format(total_counter))
+    print('Multi-Aspect-Multi-Sentiment counter: {}'.format(mixed_counter))
 
     return all_rolled, all_unrolled, mixed_rolled, mixed_unrolled
 
@@ -410,15 +319,13 @@ def load_and_cache_vocabs(data, args):
     cached_dep_tag_vocab_file = os.path.join(
         pkls_path, 'cached_{}_dep_tag_vocab.pkl'.format(args.dataset_name))
     if os.path.exists(cached_dep_tag_vocab_file):
-        logger.info('Loading vocab of dependency tags from %s',
-                    cached_dep_tag_vocab_file)
+        print('Loading vocab of dependency tags from %s', cached_dep_tag_vocab_file)
         with open(cached_dep_tag_vocab_file, 'rb') as f:
             dep_tag_vocab = pickle.load(f)
     else:
-        logger.info('Creating vocab of dependency tags.')
+        print('Creating vocab of dependency tags.')
         dep_tag_vocab = build_dep_tag_vocab(data, min_freq=0)
-        logger.info('Saving dependency tags  vocab, size: %s, to file %s',
-                    dep_tag_vocab['len'], cached_dep_tag_vocab_file)
+        print('Saving dependency tags  vocab, size: %s, to file %s', dep_tag_vocab['len'], cached_dep_tag_vocab_file)
         with open(cached_dep_tag_vocab_file, 'wb') as f:
             pickle.dump(dep_tag_vocab, f, -1)
 
@@ -426,15 +333,13 @@ def load_and_cache_vocabs(data, args):
     cached_pos_tag_vocab_file = os.path.join(
         pkls_path, 'cached_{}_pos_tag_vocab.pkl'.format(args.dataset_name))
     if os.path.exists(cached_pos_tag_vocab_file):
-        logger.info('Loading vocab of dependency tags from %s',
-                    cached_pos_tag_vocab_file)
+        print('Loading vocab of dependency tags from %s', cached_pos_tag_vocab_file)
         with open(cached_pos_tag_vocab_file, 'rb') as f:
             pos_tag_vocab = pickle.load(f)
     else:
-        logger.info('Creating vocab of dependency tags.')
+        print('Creating vocab of dependency tags.')
         pos_tag_vocab = build_pos_tag_vocab(data, min_freq=0)
-        logger.info('Saving dependency tags  vocab, size: %s, to file %s',
-                    pos_tag_vocab['len'], cached_pos_tag_vocab_file)
+        print('Saving dependency tags  vocab, size: %s, to file %s', pos_tag_vocab['len'], cached_pos_tag_vocab_file)
         with open(cached_pos_tag_vocab_file, 'wb') as f:
             pickle.dump(pos_tag_vocab, f, -1)
 
@@ -495,25 +400,6 @@ def build_pos_tag_vocab(data, vocab_size=1000, min_freq=1):
 
     return {'itos': itos, 'stoi': stoi, 'len': len(itos)}
 
-
-# def build_dep_tag_vocab_energy():  # 47 in total, all tags plus pad and non-connect
-#     '''
-#     biaffine dep_tag Vocab : {0: 'punct', 1: 'prep', 2: 'pobj', 3: 'det', 4: 'nn',
-#         5: 'nsubj', 6: 'amod', 7: 'root', 8: 'dobj', 9: 'aux', 10: 'advmod', 11: 'conj',
-#         12: 'cc', 13: 'num', 14: 'poss', 15: 'ccomp', 16: 'dep', 17: 'xcomp', 18: 'mark',
-#         19: 'cop', 20: 'number', 21: 'possessive', 22: 'rcmod', 23: 'auxpass', 24: 'appos',
-#         25: 'nsubjpass', 26: 'advcl', 27: 'partmod', 28: 'pcomp', 29: 'neg', 30: 'tmod',
-#         31: 'quantmod', 32: 'npadvmod', 33: 'prt', 34: 'infmod', 35: 'parataxis',
-#         36: 'mwe', 37: 'expl', 38: 'acomp', 39: 'iobj', 40: 'csubj', 41: 'predet',
-#         42: 'preconj', 43: 'discourse', 44: 'csubjpass'}
-#     This is used in energy case.
-#     '''
-#     head_tags = {0: 'punct', 1: 'prep', 2: 'pobj', 3: 'det', 4: 'nn', 5: 'nsubj', 6: 'amod', 7: 'root', 8: 'dobj', 9: 'aux', 10: 'advmod', 11: 'conj', 12: 'cc', 13: 'num', 14: 'poss', 15: 'ccomp', 16: 'dep', 17: 'xcomp', 18: 'mark', 19: 'cop', 20: 'number', 21: 'possessive', 22: 'rcmod', 23: 'auxpass', 24: 'appos',
-#                  25: 'nsubjpass', 26: 'advcl', 27: 'partmod', 28: 'pcomp', 29: 'neg', 30: 'tmod', 31: 'quantmod', 32: 'npadvmod', 33: 'prt', 34: 'infmod', 35: 'parataxis', 36: 'mwe', 37: 'expl', 38: 'acomp', 39: 'iobj', 40: 'csubj', 41: 'predet', 42: 'preconj', 43: 'discourse', 44: 'csubjpass', 45: '<pad>', 46: 'non-connect'}
-#     itos = [head_tags[i] for i in range(len(head_tags))]
-#     stoi = defaultdict()
-#     stoi.update({tok: i for i, tok in enumerate(itos)})
-#     return {'itos': itos, 'stoi': stoi, 'len': len(itos)}
 
 
 def build_dep_tag_vocab(data, vocab_size=1000, min_freq=0):
@@ -688,17 +574,8 @@ class ASBA_Depparsed_Dataset(Dataset):
         Convert sentence, aspects, pos_tags, dependency_tags to ids.
         '''
         for i in range(len(self.data)):
-            if self.args.embedding_type == 'glove':
-                self.data[i]['sentence_ids'] = [self.word_vocab['stoi'][w]
-                                                for w in self.data[i]['sentence']]
-                self.data[i]['aspect_ids'] = [self.word_vocab['stoi'][w]
-                                              for w in self.data[i]['aspect']]
-            elif self.args.embedding_type == 'elmo':
-                self.data[i]['sentence_ids'] = self.data[i]['sentence']
-                self.data[i]['aspect_ids'] = self.data[i]['aspect']
-            else:  # self.args.embedding_type == 'bert'
-                self.convert_features_bert(i)
 
+            self.convert_features_bert(i)
             self.data[i]['text_len'] = len(self.data[i]['sentence'])
             self.data[i]['aspect_position'] = [0] * self.data[i]['text_len']
             try:  # find the index of aspect in sentence
