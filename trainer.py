@@ -1,20 +1,13 @@
-import logging
 import os
 import random
-
 import numpy as np
 import torch
 import torch.nn.functional as F
-from sklearn.metrics import f1_score
-from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from tqdm import tqdm, trange
-
+from tqdm import trange
 from datasets import my_collate_bert
 from transformers import AdamW
-from transformers import BertTokenizer
-
-logger = logging.getLogger(__name__)
+from utils import calculate_metrics
 
 
 def initialize_random_seed(args):
@@ -109,7 +102,6 @@ def train_model(args, train_dataset, model, test_dataset):
     Returns:
         The global training step, training loss, and all evaluation results.
     """
-    tb_writer = SummaryWriter()
 
     # Update training batch size
     args.train_batch_size = args.per_gpu_train_batch_size
@@ -131,7 +123,7 @@ def train_model(args, train_dataset, model, test_dataset):
     optimizer = configure_bert_optimizer(args, model)
 
     # Training loop
-    logger.info("***** Running training *****")
+    print("***** Running training *****")
     global_step = 0
     tr_loss, logging_loss = 0.0, 0.0
     all_eval_results = []
@@ -158,14 +150,13 @@ def train_model(args, train_dataset, model, test_dataset):
                     results, eval_loss = evaluate_model(args, test_dataset, model)
                     all_eval_results.append(results)
                     for key, value in results.items():
-                        tb_writer.add_scalar('eval_{}'.format(key), value, global_step)
-                    tb_writer.add_scalar('train_loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
+                        print('eval_{}'.format(key), value, global_step)
+                    print('train_loss', (tr_loss - logging_loss) / args.logging_steps, global_step)
                     logging_loss = tr_loss
                 if args.max_steps > 0 and global_step > args.max_steps:
                     break
         if args.max_steps > 0 and global_step > args.max_steps:
             break
-    tb_writer.close()
     return global_step, tr_loss/global_step, all_eval_results
 
 
@@ -188,7 +179,7 @@ def evaluate_model(args, eval_dataset, model):
     eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler,
                                  batch_size=args.eval_batch_size,
                                  collate_fn=collate_fn)
-    logger.info("***** Running evaluation *****")
+    print("***** Running evaluation *****")
     eval_loss = 0.0
     nb_eval_steps = 0
     preds = None
@@ -212,17 +203,12 @@ def evaluate_model(args, eval_dataset, model):
     preds = np.argmax(preds, axis=1)
     result = calculate_metrics(preds, out_label_ids)
     results.update(result)
-
-
     output_eval_file = os.path.join(args.output_dir, 'eval_results.txt')
     with open(output_eval_file, 'a+') as writer:
-        logger.info('***** Eval results *****')
-        logger.info("  eval loss: %s", str(eval_loss))
+        print('***** Eval results *****')
+        print("eval loss: {}".format(eval_loss))
         for key in sorted(result.keys()):
-            logger.info("  %s = %s", key, str(result[key]))
-            writer.write("  %s = %s\n" % (key, str(result[key])))
-            writer.write('\n')
-        writer.write('\n')
+            print("{} = {}".format(key, result[key]))
 
     return results, eval_loss
 
@@ -265,50 +251,3 @@ def evaluate_bad_cases(args, eval_dataset, model, word_vocab):
             }
             bad_cases.append(case)
     return bad_cases
-
-
-def simple_accuracy(preds, labels):
-    """
-    Calculates accuracy of predictions.
-    
-    Args:
-        preds: Model predictions.
-        labels: Ground truth labels.
-        
-    Returns:
-        The accuracy of the predictions.
-    """
-    return (preds == labels).mean()
-
-
-def accuracy_and_f1_score(preds, labels):
-    """
-    Calculates accuracy and F1-score of predictions.
-    
-    Args:
-        preds: Model predictions.
-        labels: Ground truth labels.
-        
-    Returns:
-        A dictionary containing the accuracy and F1-score of the predictions.
-    """
-    accuracy = simple_accuracy(preds, labels)
-    f1 = f1_score(y_true=labels, y_pred=preds, average='macro')
-    return {
-        "accuracy": accuracy,
-        "f1_score": f1
-    }
-
-
-def calculate_metrics(preds, labels):
-    """
-    Computes metrics of predictions.
-    
-    Args:
-        preds: Model predictions.
-        labels: Ground truth labels.
-        
-    Returns:
-        The calculated metrics (accuracy and F1-score).
-    """
-    return accuracy_and_f1_score(preds, labels)

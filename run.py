@@ -1,36 +1,21 @@
 # coding=utf-8
-import argparse
 import logging
-import os
-#os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 import random
 
 import numpy as np
-import pandas as pd
 import torch
-from transformers import (BertConfig, BertForTokenClassification,
-                                  BertTokenizer)
-from torch.utils.data import DataLoader
+from transformers import BertTokenizer
 
 from datasets import load_datasets_and_vocabs
 from model import BertGraphAttentionNetwork
 from trainer import train_model
 
-logger = logging.getLogger(__name__)
 
 def set_seed(args):
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
-
-def check_args(args):
-    '''
-    eliminate confilct situations
-    
-    '''
-    logger.info(vars(args))
-        
 
 
 class ArgumentParser:
@@ -48,7 +33,7 @@ args.cuda_id = '3'
 args.seed = 2019
 
 # Model parameters
-args.glove_dir = '/data1/SHENWZH/wordvec'
+args.glove_dir = '/data/'
 args.bert_model_dir = 'bert-base-uncased'
 args.pure_bert = False
 args.gat_bert = False
@@ -64,7 +49,6 @@ args.gcn_mem_dim = 300
 args.gcn_dropout = 0.2
 args.gat = False
 args.gat_our = False
-args.gat_attention_type = 'dotprod'
 args.embedding_type = 'bert'
 args.embedding_dim = 300
 args.dep_relation_embed_dim = 300
@@ -85,20 +69,10 @@ args.max_steps = -1
 args.logging_steps = 50
 
 
-# Setup logging
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                    datefmt='%m/%d/%Y %H:%M:%S',
-                    level=logging.INFO)
-
-# Parse args
-check_args(args)
-
 # Setup CUDA, GPU training
-#os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_id
 #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-device = "cpu"
-args.device = device
-logger.info('Device is %s', args.device)
+args.device = "cpu"
+print('Device is {}'.format(args.device))
 
 # Set seed
 set_seed(args)
@@ -122,5 +96,5 @@ _, _,  all_eval_results = train_model(args, train_dataset, model, test_dataset)
 if len(all_eval_results):
     best_eval_result = max(all_eval_results, key=lambda x: x['acc']) 
     for key in sorted(best_eval_result.keys()):
-        logger.info("  %s = %s", key, str(best_eval_result[key]))
+        print("{} = {}".format(key, best_eval_result[key]))
 
